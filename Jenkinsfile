@@ -1,117 +1,22 @@
-pipeline {
-    agent any
+stage('Deploy to Tomcat') {
+    steps {
+        sshagent(['ubuntu']) {
+            sh '''
+                set -e
 
-    parameters {
-        string(
-            name: 'SERVER_IP',
-            description: 'Tomcat Server IP'
-        )
-    }
+                echo "Deploying WAR..."
 
-    tools {
-        jdk 'jdk17'
-        maven 'maven3'
-    }
+                WAR_FILE=$(ls sample-app/target/*.war)
 
-    environment {
-		SERVER_USER = 'ubuntu'
-        TOMCAT_DIR = '/opt/tomcat/webapps'
-    }
+                EC2_HOST="YOUR_EC2_PUBLIC_IP"
 
-    stages {
+                scp -o StrictHostKeyChecking=no $WAR_FILE ubuntu@$EC2_HOST:/tmp/
 
-        stage('Checkout Code') {
-            steps {
-                git branch: 'main',
-                    url: 'https://github.com/Praveen-Rathod1/Jenkins-Backup_repo.git'
-            }
-        }
-
-        stage('Build') {
-            steps {
-
-                dir('sample-app') {
-                    sh 'mvn clean package -DskipTests'
-                }
-
-                script {
-
-                    env.WAR_FILE = sh(
-                        script: "ls sample-app/target/*.war",
-                        returnStdout: true
-                    ).trim()
-
-                    env.WAR_NAME = sh(
-                        script: "basename ${env.WAR_FILE}",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "WAR File Path: ${env.WAR_FILE}"
-                    echo "WAR Name: ${env.WAR_NAME}"
-                }
-            }
-        }
-
-        stage('Upload to JFrog') {
-            steps {
-
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'jfrog-creds',
-                        usernameVariable: 'JFROG_USER',
-                        passwordVariable: 'JFROG_PASS'
-                    )
-                ]) {
-
-                    sh '''
-                        set -e
-
-                        echo "Uploading WAR to JFrog..."
-
-                        FILE_NAME="${JOB_NAME}-${BUILD_NUMBER}-sample.war"
-
-                        curl --fail -L \
-                             -u $JFROG_USER:$JFROG_PASS \
-                             -T "$WAR_FILE" \
-                             "https://triallb6d6m.jfrog.io/artifactory/jenkinsjava-generic-local/$FILE_NAME"
-
-                        echo "Upload completed successfully!"
-                    '''
-                }
-            }
-        }
-
-        stage('Deploy to Tomcat') {
-            steps {
-
-                sshagent(credentials: ['tomcat-ssh-key']) {
-
-                    sh """
-                        set -e
-
-                        echo "Deploying WAR: ${WAR_NAME}"
-
-                        scp -o StrictHostKeyChecking=no \
-                        ${WAR_FILE} ${SERVER_USER}@${params.SERVER_IP}:/tmp/
-
-                        ssh -o StrictHostKeyChecking=no \
-                        ${SERVER_USER}@${params.SERVER_IP} '
-
-                            sudo rm -rf ${TOMCAT_DIR}/sample-app*
-
-                            sudo mv /tmp/${WAR_NAME} ${TOMCAT_DIR}/
-
-                            sudo systemctl restart tomcat
-
-                            sleep 10
-
-                            sudo systemctl status tomcat --no-pager
-                        '
-
-                        echo "Deployment completed successfully!"
-                    """
-                }
-            }
+                ssh -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "
+                    sudo mv /tmp/*.war /opt/tomcat/webapps/
+                    sudo systemctl restart tomcat
+                "
+            '''
         }
     }
 }
