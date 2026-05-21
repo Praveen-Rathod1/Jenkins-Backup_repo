@@ -1,22 +1,71 @@
-stage('Deploy to Tomcat') {
-    steps {
-        sshagent(['ubuntu']) {
-            sh '''
-                set -e
+pipeline {
+    agent any
 
-                echo "Deploying WAR..."
+    parameters {
+        string(
+            name: 'SERVER_IP',
+            description: 'Tomcat Server IP'
+        )
+    }
 
-                WAR_FILE=$(ls sample-app/target/*.war)
+    tools {
+        jdk 'jdk17'
+        maven 'maven3'
+    }
 
-                EC2_HOST="YOUR_EC2_PUBLIC_IP"
+    environment {
+        SERVER_USER='ubuntu'
+        TOMCAT_DIR='/opt/tomcat/webapps'
+    }
 
-                scp -o StrictHostKeyChecking=no $WAR_FILE ubuntu@$EC2_HOST:/tmp/
+    stages {
 
-                ssh -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "
-                    sudo mv /tmp/*.war /opt/tomcat/webapps/
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                url: 'https://github.com/Praveen-Rathod1/Jenkins-Backup_repo.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+
+                script {
+
+                    env.WAR_FILE = sh(
+                    script: "find . -name '*.war' | head -1",
+                    returnStdout: true
+                    ).trim()
+
+                    env.WAR_NAME = sh(
+                    script: "basename ${env.WAR_FILE}",
+                    returnStdout: true
+                    ).trim()
+
+                    echo "WAR File=${env.WAR_FILE}"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+
+                sshagent(['tomcat-ssh-key']) {
+
+                    sh """
+                    scp -o StrictHostKeyChecking=no \
+                    ${WAR_FILE} ${SERVER_USER}@${params.SERVER_IP}:/tmp/
+
+                    ssh -o StrictHostKeyChecking=no \
+                    ${SERVER_USER}@${params.SERVER_IP} "
+                    sudo rm -rf ${TOMCAT_DIR}/sample-app*
+                    sudo mv /tmp/${WAR_NAME} ${TOMCAT_DIR}/
                     sudo systemctl restart tomcat
-                "
-            '''
+                    "
+                    """
+                }
+            }
         }
     }
 }
