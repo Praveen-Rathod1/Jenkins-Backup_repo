@@ -4,7 +4,6 @@ pipeline {
     parameters {
         string(
             name: 'SERVER_IP',
-            defaultValue: '',
             description: 'Tomcat Server IP'
         )
     }
@@ -15,28 +14,16 @@ pipeline {
     }
 
     environment {
-        SERVER_USER = 'ubuntu'
+		SERVER_USER = 'ubuntu'
         TOMCAT_DIR = '/opt/tomcat/webapps'
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 git branch: 'main',
-                url: 'https://github.com/Praveen-Rathod1/Jenkins-Backup_repo.git'
-            }
-        }
-
-        stage('Verify Files') {
-            steps {
-                sh '''
-                echo "Current workspace:"
-                pwd
-
-                echo "Repository structure:"
-                ls -R
-                '''
+                    url: 'https://github.com/Praveen-Rathod1/Jenkins-Backup_repo.git'
             }
         }
 
@@ -50,7 +37,7 @@ pipeline {
                 script {
 
                     env.WAR_FILE = sh(
-                        script: "find sample-app/target -name '*.war' | head -1",
+                        script: "ls sample-app/target/*.war",
                         returnStdout: true
                     ).trim()
 
@@ -59,7 +46,7 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    echo "WAR File: ${env.WAR_FILE}"
+                    echo "WAR File Path: ${env.WAR_FILE}"
                     echo "WAR Name: ${env.WAR_NAME}"
                 }
             }
@@ -77,69 +64,54 @@ pipeline {
                 ]) {
 
                     sh '''
-                    set -e
+                        set -e
 
-                    FILE_NAME="${JOB_NAME}-${BUILD_NUMBER}.war"
+                        echo "Uploading WAR to JFrog..."
 
-                    echo "Uploading to JFrog..."
+                        FILE_NAME="${JOB_NAME}-${BUILD_NUMBER}-sample.war"
 
-                    curl --fail -L \
-                    -u $JFROG_USER:$JFROG_PASS \
-                    -T "$WAR_FILE" \
-                    "https://triallb6d6m.jfrog.io/artifactory/jenkinsjava-generic-local/$FILE_NAME"
+                        curl --fail -L \
+                             -u $JFROG_USER:$JFROG_PASS \
+                             -T "$WAR_FILE" \
+                             "https://triallb6d6m.jfrog.io/artifactory/jenkinsjava-generic-local/$FILE_NAME"
 
-                    echo "Upload successful"
+                        echo "Upload completed successfully!"
                     '''
                 }
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to Tomcat') {
             steps {
 
                 sshagent(credentials: ['tomcat-ssh-key']) {
 
                     sh """
-                    set -e
+                        set -e
 
-                    echo "Copying WAR to target server..."
+                        echo "Deploying WAR: ${WAR_NAME}"
 
-                    scp -o StrictHostKeyChecking=no \
-                    ${WAR_FILE} \
-                    ${SERVER_USER}@${params.SERVER_IP}:/tmp/
+                        scp -o StrictHostKeyChecking=no \
+                        ${WAR_FILE} ${SERVER_USER}@${params.SERVER_IP}:/tmp/
 
-                    ssh -o StrictHostKeyChecking=no \
-                    ${SERVER_USER}@${params.SERVER_IP} "
+                        ssh -o StrictHostKeyChecking=no \
+                        ${SERVER_USER}@${params.SERVER_IP} '
 
-                    sudo rm -rf ${TOMCAT_DIR}/sample-app*
-                    sudo mv /tmp/${WAR_NAME} ${TOMCAT_DIR}/
+                            sudo rm -rf ${TOMCAT_DIR}/sample-app*
 
-                    sudo systemctl restart tomcat
+                            sudo mv /tmp/${WAR_NAME} ${TOMCAT_DIR}/
 
-                    sleep 10
+                            sudo systemctl restart tomcat
 
-                    sudo systemctl status tomcat --no-pager
-                    "
+                            sleep 10
 
-                    echo "Deployment completed successfully"
+                            sudo systemctl status tomcat --no-pager
+                        '
+
+                        echo "Deployment completed successfully!"
                     """
                 }
             }
-        }
-    }
-
-    post {
-
-        success {
-            echo 'Pipeline executed successfully'
-        }
-
-        failure {
-            echo 'Pipeline failed'
-        }
-
-        always {
-            cleanWs()
         }
     }
 }
