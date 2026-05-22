@@ -1,0 +1,51 @@
+pipeline {
+    agent any
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/Praveen-Rathod1/Jenkins-Backup_repo.git'
+
+        stage('Build') {
+            steps {
+                echo 'Build started...'
+                sh 'mkdir -p temp'
+                sh 'touch temp/test.txt'
+                sh 'echo Build completed'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                sh 'echo Tests successful'
+            }
+        }
+
+        stage('Destroy / Cleanup') {
+            steps {
+                echo 'Cleaning temporary files...'
+                sh 'rm -rf temp'
+                sh 'echo Cleanup completed'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed!'
+        }
+
+        always {
+            echo 'Pipeline finished.'
+        }
+    }
+}
+    }
+}
